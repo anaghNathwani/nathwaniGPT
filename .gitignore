@@ -1,0 +1,4 @@
+# Ollama model weights (large binary blobs — store separately)
+*.gguf
+*.bin
+*.ggml
