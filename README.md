@@ -23,10 +23,12 @@ ollama run nathwaniGPT
 | Property | Value |
 |---|---|
 | Base | `qwen2.5:14b` (Q4_K_M, 14.8B params) |
-| Context window | 4096 tokens |
-| Temperature | 0.6 |
-| Top-p | 0.9 |
-| Repeat penalty | 1.1 |
+| Context window | 8192 tokens |
+| Temperature | 0.5 |
+| Top-p | 0.85 |
+| Top-k | 40 |
+| Repeat penalty | 1.05 |
+| Max tokens | unlimited |
 
 ## Versions
 
@@ -34,6 +36,7 @@ Versioned Modelfiles live in [`models/`](models/). The root `Modelfile` always r
 
 | Version | Notes |
 |---|---|
+| [v1.2-beta](models/v1.2-beta/) | Larger context, tighter sampling, improved system prompt for reasoning |
 | [v1](models/v1/) | Initial release — qwen2.5:14b base |
 
 ## Adding a New Version
