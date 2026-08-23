@@ -36,7 +36,8 @@ Versioned Modelfiles live in [`models/`](models/). The root `Modelfile` always r
 
 | Version | Notes |
 |---|---|
-| [v1.2-beta](models/v1.2-beta/) | Larger context, tighter sampling, improved system prompt for reasoning |
+| [v1.2](models/v1.2/) | Larger context, tighter sampling, improved system prompt for reasoning |
+| [v1.2-beta](models/v1.2-beta/) | Superseded by v1.2 |
 | [v1](models/v1/) | Initial release — qwen2.5:14b base |
 
 ## Adding a New Version

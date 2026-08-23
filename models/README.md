@@ -6,7 +6,8 @@ Each subdirectory is a versioned snapshot of nathwaniGPT. To add a new version, 
 
 | Version | Base Model | Date | Status |
 |---|---|---|---|
-| [v1.2-beta](v1.2-beta/) | qwen2.5:14b | 2026-08-22 | Beta |
+| [v1.2](v1.2/) | qwen2.5:14b | 2026-08-23 | Stable |
+| [v1.2-beta](v1.2-beta/) | qwen2.5:14b | 2026-08-22 | Superseded |
 | [v1](v1/) | qwen2.5:14b | 2026-08-22 | Stable |
 
 ## Convention
