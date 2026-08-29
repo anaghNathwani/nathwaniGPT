@@ -1,0 +1,12 @@
+# Core inference
+torch>=2.3.0
+safetensors>=0.4.3
+
+# Tokenizer only (no model download from transformers)
+transformers>=4.45.0
+huggingface_hub>=0.24.0
+
+# API server
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.0.0

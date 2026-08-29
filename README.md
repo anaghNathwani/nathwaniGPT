@@ -1,48 +1,84 @@
 # nathwaniGPT
 
-A personal AI assistant built on [Ollama](https://ollama.com), tuned for sharp, concise responses that adapt to the conversation — analytical when depth is needed, casual when it isn't.
+A custom AI assistant built from scratch — our own inference engine, our own sampler, our own server — running on permissively-licensed open weights.
 
-## Quick Start
+No Ollama wrapping. No HuggingFace pipelines. Just PyTorch and our code.
 
-```bash
-# Install Ollama if you haven't
-brew install ollama
+---
 
-# Pull the base model
-ollama pull qwen2.5:14b
+## Architecture (v2.0)
 
-# Build nathwaniGPT
-ollama create nathwaniGPT -f Modelfile
+```
+engine/
+  model.py       — Decoder-only transformer (RMSNorm · RoPE · GQA · SwiGLU)
+  loader.py      — Load safetensors weights directly into our model
+  sampler.py     — Temperature / top-k / nucleus / repetition penalty
+  tokenizer.py   — Tokenizer wrapper (tokenizer only, not the upstream model)
 
-# Run
-ollama run nathwaniGPT
+serve/
+  cli.py         — Interactive chat terminal
+  api.py         — OpenAI-compatible REST API (streaming + non-streaming)
+
+scripts/
+  download.py    — Fetch weights from HuggingFace Hub
+
+configs/
+  phi4-mini.json    — Architecture reference for Phi-4 Mini (MIT)
+  mistral-7b.json   — Architecture reference for Mistral 7B (Apache 2.0)
 ```
 
-## Model
+---
 
-| Property | Value |
-|---|---|
-| Base | `qwen2.5:14b` (Q4_K_M, 14.8B params) |
-| Context window | 8192 tokens |
-| Temperature | 0.5 |
-| Top-p | 0.85 |
-| Top-k | 40 |
-| Repeat penalty | 1.05 |
-| Max tokens | unlimited |
+## Quick start
 
-## Versions
+```bash
+pip install -r requirements.txt
 
-Versioned Modelfiles live in [`models/`](models/). The root `Modelfile` always reflects the latest version.
+# Download base weights (MIT license — use however you want)
+python scripts/download.py phi4-mini
 
-| Version | Notes |
-|---|---|
-| [v1.2](models/v1.2/) | Larger context, tighter sampling, improved system prompt for reasoning |
-| [v1.2-beta](models/v1.2-beta/) | Superseded by v1.2 |
-| [v1](models/v1/) | Initial release — qwen2.5:14b base |
+# Chat
+python serve/cli.py
 
-## Adding a New Version
+# Or run the API server
+python serve/api.py
 
-1. Create `models/vN/Modelfile` with your changes.
-2. Create `models/vN/README.md` describing what changed and why.
-3. Update the root `Modelfile` to match.
-4. Update the versions table above and in [`models/README.md`](models/README.md).
+# Hit it like any OpenAI-compatible endpoint
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "hello"}]}'
+```
+
+---
+
+## Base models (all permissive)
+
+| Name | License | Size | Notes |
+|---|---|---|---|
+| `phi4-mini` | MIT | ~7 GB | Default. Fast on Apple MPS. |
+| `mistral-7b` | Apache 2.0 | ~14 GB | Strong general capability. |
+| `olmo-7b` | Apache 2.0 | ~14 GB | Most open — training data is also public. |
+| `smollm2` | Apache 2.0 | ~3 GB | Tiny; great for testing on CPU. |
+
+```bash
+python scripts/download.py --list
+python scripts/download.py mistral-7b
+python serve/cli.py --weights weights/mistral-7b
+```
+
+---
+
+## Version history
+
+| Version | Approach | Base |
+|---|---|---|
+| [v1.0–v1.2](models/) | Ollama Modelfile (system prompt wrapper) | Qwen 2.5 14B |
+| v2.0-alpha | Own inference engine + permissive weights | Phi-4 Mini (MIT) |
+
+---
+
+## Fine-tuning
+
+See [`training/`](training/) for the LoRA fine-tuning notebook (Colab).
+Fine-tuned weights can be exported as GGUF (Ollama path, v1.x) or kept in
+safetensors format for the v2 engine.
