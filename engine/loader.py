@@ -62,7 +62,7 @@ def _pick_device() -> str:
 def load_model(
     weights_dir: Union[str, Path],
     device: str = "auto",
-    dtype: torch.dtype = torch.bfloat16,
+    dtype: torch.dtype = None,  # auto-selected per device
 ) -> tuple[NathwaniGPT, ModelConfig, str]:
     """
     Load a NathwaniGPT model from a HuggingFace weights directory.
@@ -95,6 +95,15 @@ def load_model(
 
     if device == "auto":
         device = _pick_device()
+
+    if dtype is None:
+        # bfloat16 has known numerical issues on MPS for long sequences; use float16 there
+        if device == "mps":
+            dtype = torch.float16
+        elif device == "cuda":
+            dtype = torch.bfloat16
+        else:
+            dtype = torch.float32
 
     model = NathwaniGPT(cfg).to(dtype).to(device)
     print(f"[loader] Model: {cfg.num_hidden_layers}L · {cfg.hidden_size}H · "
@@ -153,6 +162,20 @@ def load_model(
             mid = gate_up.shape[0] // 2
             our_state[us_pre + "mlp.gate_proj.weight"] = gate_up[:mid].contiguous()
             our_state[us_pre + "mlp.up_proj.weight"]   = gate_up[mid:].contiguous()
+
+    # Dequantize int8 weights produced by scripts/quantize.py
+    quant_meta_path = weights_dir / "quantization.json"
+    if quant_meta_path.exists():
+        import json as _json
+        scales = _json.loads(quant_meta_path.read_text())
+        dequantized = 0
+        for key in list(our_state.keys()):
+            if key in scales and our_state[key].dtype == torch.int8:
+                scale = torch.tensor(scales[key], dtype=torch.float32)
+                our_state[key] = our_state[key].to(torch.float32).mul_(scale).to(dtype)
+                dequantized += 1
+        if dequantized:
+            print(f"[loader] Dequantized {dequantized} int8 tensors → {dtype}")
 
     model.load_state_dict(our_state, strict=True)
     model.eval()

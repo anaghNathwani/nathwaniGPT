@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-nathwaniGPT —w
+nathwaniGPT 
 
 Usage:
     python serve/api.py
@@ -23,6 +23,7 @@ from typing import AsyncIterator, Optional
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -56,6 +57,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="nathwaniGPT API", version="2.0.0-alpha", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -93,13 +101,14 @@ def _prefill(messages: list[dict]) -> tuple[torch.Tensor, list, int]:
     return logits, kv_caches, len(input_ids)
 
 
-def _step(logits, kv_caches, start_pos, req: ChatRequest) -> tuple[int, torch.Tensor, list, int]:
+def _step(logits, kv_caches, start_pos, req: ChatRequest, generated: list[int]) -> tuple[int, torch.Tensor, list, int]:
     next_token = sample_token(
         logits[0, -1],
         temperature=req.temperature,
         top_k=req.top_k,
         top_p=req.top_p,
         repetition_penalty=req.repetition_penalty,
+        generated=generated,  # only model-generated tokens, not prompt
     )
     input_tensor = torch.tensor([[next_token]], dtype=torch.long, device=_device)
     logits, kv_caches = _model(input_tensor, kv_caches=kv_caches, start_pos=start_pos)
@@ -139,9 +148,11 @@ async def chat(req: ChatRequest):
     # Non-streaming
     logits, kv_caches, start_pos = _prefill(messages)
     result: list[int] = []
+    generated: list[int] = []
 
     for _ in range(req.max_tokens):
-        next_token, logits, kv_caches, start_pos = _step(logits, kv_caches, start_pos, req)
+        next_token, logits, kv_caches, start_pos = _step(logits, kv_caches, start_pos, req, generated)
+        generated.append(next_token)
         if next_token in _stop_ids:
             break
         result.append(next_token)
@@ -163,9 +174,11 @@ async def _stream(messages: list[dict], req: ChatRequest) -> AsyncIterator[bytes
     logits, kv_caches, start_pos = await asyncio.get_event_loop().run_in_executor(
         None, _prefill, messages
     )
+    generated: list[int] = []
 
     for _ in range(req.max_tokens):
-        next_token, logits, kv_caches, start_pos = _step(logits, kv_caches, start_pos, req)
+        next_token, logits, kv_caches, start_pos = _step(logits, kv_caches, start_pos, req, generated)
+        generated.append(next_token)
         if next_token in _stop_ids:
             break
 

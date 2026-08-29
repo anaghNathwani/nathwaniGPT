@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from engine.loader import load_model
 from engine.sampler import sample_token
 from engine.tokenizer import Tokenizer
+from engine.context import ConversationContext
 
 SYSTEM_PROMPT = (
     "You are nathwaniGPT, a sharp and highly capable AI assistant. "
@@ -52,7 +53,10 @@ def generate(
 ) -> str:
     prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
     input_ids = tokenizer.encode(prompt)
-    generated_ids = list(input_ids)
+    # Only track tokens the model generated — not prompt tokens.
+    # Including prompt tokens in the repetition penalty penalises every common
+    # word in the system prompt, producing incoherent output.
+    generated_ids: list[int] = []
     result_tokens: list[int] = []
 
     stop_ids = tokenizer.stop_ids
@@ -90,6 +94,8 @@ def main():
     parser = argparse.ArgumentParser(description="nathwaniGPT chat")
     parser.add_argument("--weights", default="weights/phi4-mini", help="Path to weights directory")
     parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument("--context-limit", type=int, default=16384,
+                        help="Token budget for conversation history (default: 16384)")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-k", type=int, default=50)
     parser.add_argument("--top-p", type=float, default=0.9)
@@ -102,7 +108,7 @@ def main():
     tokenizer = Tokenizer(weights_path)
     print(BANNER)
 
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    ctx = ConversationContext(tokenizer, max_tokens=args.context_limit, system_prompt=SYSTEM_PROMPT)
 
     while True:
         try:
@@ -111,21 +117,27 @@ def main():
             print("\nGoodbye.")
             break
 
+        if user_input.lower() in ("/reset", "/clear"):
+            ctx.reset()
+            print("(conversation cleared)")
+            continue
+
         if not user_input:
             continue
 
-        messages.append({"role": "user", "content": user_input})
+        ctx.add("user", user_input)
         print("nathwaniGPT: ", end="", flush=True)
 
         response = generate(
-            model, tokenizer, messages, device,
+            model, tokenizer, ctx.messages, device,
             max_new_tokens=args.max_tokens,
             temperature=args.temperature,
             top_k=args.top_k,
             top_p=args.top_p,
             repetition_penalty=args.rep_penalty,
         )
-        messages.append({"role": "assistant", "content": response})
+        ctx.add("assistant", response)
+        print(f"  [{ctx.token_count}/{args.context_limit} tokens]")
 
 
 if __name__ == "__main__":

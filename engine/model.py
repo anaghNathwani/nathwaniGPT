@@ -124,9 +124,14 @@ class Attention(nn.Module):
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        # Causal only on prefill; decode step always attends to full KV
-        is_causal = (kv_cache is None) and (T > 1)
-        out = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
+        # Build an explicit causal mask for prefill.
+        # Avoid is_causal=True — it has numerical issues on MPS for sequences > ~10 tokens.
+        if kv_cache is None and T > 1:
+            mask = torch.full((T, T), float("-inf"), device=x.device, dtype=q.dtype)
+            mask = torch.triu(mask, diagonal=1)
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        else:
+            out = F.scaled_dot_product_attention(q, k, v)
         out = out.transpose(1, 2).contiguous().view(B, T, -1)
         return self.o_proj(out), new_cache
 

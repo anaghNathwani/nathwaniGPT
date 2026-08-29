@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "base_model": "microsoft/Phi-4-mini-instruct",
+  "weights": "weights/phi4-mini",
+  "license": "MIT",
+
+  "inference": {
+    "temperature": 0.7,
+    "top_k": 50,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "max_new_tokens": 1024
+  }
+}
