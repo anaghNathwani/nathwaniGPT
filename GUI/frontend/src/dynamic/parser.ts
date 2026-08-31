@@ -45,13 +45,20 @@ export class ActionStreamParser {
           if (pre) events.push({ type: 'text', value: pre });
           this.buf   = '';
           this.inTag = true;
-        } else if (this.buf.length > OPEN.length) {
-          // First char can't be the start of OPEN — safe to emit.
-          events.push({ type: 'text', value: this.buf[0] });
-          this.buf = this.buf.slice(1);
         }
+        // Don't emit char-by-char — bulk-flush after the loop instead.
       }
     }
+
+    // After consuming the whole chunk, emit everything that provably can't be
+    // the start of an OPEN tag. We only need to keep OPEN.length-1 chars as
+    // lookahead (a complete OPEN match would already have been caught above).
+    if (!this.inTag && this.buf.length > OPEN.length - 1) {
+      const safe = this.buf.length - (OPEN.length - 1);
+      events.push({ type: 'text', value: this.buf.slice(0, safe) });
+      this.buf = this.buf.slice(safe);
+    }
+
     return events;
   }
 

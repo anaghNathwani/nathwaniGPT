@@ -21,23 +21,15 @@ interface Toast {
 
 const API_BASE = '';  // same origin (proxied via Vite in dev, same port in prod)
 
+// Keep this short — Phi-4-mini degrades with long system prompts.
 const SYSTEM_PROMPT =
-  'You are nathwaniGPT, a sharp and highly capable AI assistant. ' +
-  'You think carefully before responding. ' +
-  'You never pad responses, add unnecessary caveats, or repeat yourself. ' +
-  'You treat the user as an intelligent adult.\n\n' +
-  'INTERFACE CONTROL — you have real-time control over this interface. ' +
-  'Emit tool calls using this exact format (no spaces around the tags):\n' +
-  '  <TOOL_CALL>{"action": "ACTION_NAME", ...params}</TOOL_CALL>\n\n' +
-  'Available actions:\n' +
-  '  set_background    {"action": "set_background",    "color": "#rrggbb"}\n' +
-  '  set_foreground    {"action": "set_foreground",    "color": "#rrggbb"}\n' +
-  '  set_theme         {"action": "set_theme",         "name": "dark|light|ocean|forest|sunset|cyber"}\n' +
-  '  set_title         {"action": "set_title",         "text": "new header title"}\n' +
-  '  show_notification {"action": "show_notification", "message": "...", "severity": "information|warning|error"}\n' +
-  '  reset_theme       {"action": "reset_theme"}\n\n' +
-  'Tool calls are stripped before the user sees your reply — only your text is shown. ' +
-  'When asked to change the interface, emit the tool call AND briefly confirm in text.';
+  'You are nathwaniGPT, a concise AI assistant. Answer directly, no padding.\n\n' +
+  'You can control the UI by emitting a tool call anywhere in your reply:\n' +
+  '<TOOL_CALL>{"action":"NAME",...params}</TOOL_CALL>\n' +
+  'Actions: set_theme(name: dark|light|ocean|forest|sunset|cyber), ' +
+  'set_background(color), set_foreground(color), set_title(text), ' +
+  'show_notification(message, severity: information|warning|error), reset_theme.\n' +
+  'Tool calls are invisible to the user. Emit one, then confirm in plain text.';
 
 let _uid = 0;
 const uid = () => `m${++_uid}`;
@@ -105,7 +97,11 @@ export default function App() {
       });
 
       if (!res.ok) {
-        notify(`API error: ${res.status}`, 'error', 4);
+        const body = await res.text().catch(() => '');
+        let detail = `HTTP ${res.status}`;
+        try { detail = (JSON.parse(body) as { detail?: string }).detail ?? detail; } catch { /* raw text */ }
+        notify(`API error: ${detail}`, 'error', 6);
+        setGenerating(false);
         return;
       }
 
@@ -113,37 +109,44 @@ export default function App() {
       const decoder = new TextDecoder();
       const parser  = new ActionStreamParser();
       let fullText  = '';
+      let lineBuf   = '';  // accumulates partial SSE lines across read() chunks
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === 'data: [DONE]') return;
+        if (!trimmed.startsWith('data: ')) return;
+        let chunk: { choices?: Array<{ delta?: { content?: string } }>; error?: string };
+        try { chunk = JSON.parse(trimmed.slice(6)) as typeof chunk; }
+        catch { return; }
+        if (chunk.error) { notify(`Model error: ${chunk.error}`, 'error', 8); return; }
+        const token = chunk.choices?.[0]?.delta?.content ?? '';
+        if (!token) return;
+        for (const event of parser.feed(token)) {
+          if (event.type === 'text') {
+            fullText += event.value;
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId ? { ...m, content: fullText } : m)
+            );
+          } else {
+            const action = parseAction(event.value);
+            if (action) dispatch(action, { setTitle, notify });
+          }
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const raw = decoder.decode(value, { stream: true });
-        for (const line of raw.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
-          if (!trimmed.startsWith('data: '))          continue;
-
-          let chunk: { choices?: Array<{ delta?: { content?: string } }> };
-          try { chunk = JSON.parse(trimmed.slice(6)) as typeof chunk; }
-          catch { continue; }
-
-          const token = chunk.choices?.[0]?.delta?.content ?? '';
-          if (!token) continue;
-
-          for (const event of parser.feed(token)) {
-            if (event.type === 'text') {
-              fullText += event.value;
-              setMessages(prev =>
-                prev.map(m => m.id === assistantId ? { ...m, content: fullText } : m)
-              );
-            } else {
-              const action = parseAction(event.value);
-              if (action) dispatch(action, { setTitle, notify });
-            }
-          }
-        }
+        // Append decoded bytes to line buffer, then process all complete lines.
+        // This prevents JSON parse failures when a read() boundary falls mid-line.
+        lineBuf += decoder.decode(value, { stream: true });
+        const lines = lineBuf.split('\n');
+        lineBuf = lines.pop() ?? '';  // last element may be an incomplete line
+        for (const line of lines) processLine(line);
       }
+      // Flush any remaining partial line
+      if (lineBuf) processLine(lineBuf);
 
       // Flush any buffered partial tag
       for (const event of parser.flush()) {

@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import json
 import sys
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -146,7 +147,12 @@ async def chat(req: ChatRequest):
         )
 
     # Non-streaming
-    logits, kv_caches, start_pos = _prefill(messages)
+    try:
+        logits, kv_caches, start_pos = _prefill(messages)
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(500, f"Inference error: {exc}") from exc
+
     result: list[int] = []
     generated: list[int] = []
 
@@ -171,13 +177,30 @@ async def chat(req: ChatRequest):
 
 
 async def _stream(messages: list[dict], req: ChatRequest) -> AsyncIterator[bytes]:
-    logits, kv_caches, start_pos = await asyncio.get_event_loop().run_in_executor(
-        None, _prefill, messages
-    )
+    # Run the blocking prefill in a thread so the event loop stays responsive.
+    # get_running_loop() is the modern, non-deprecated equivalent of get_event_loop().
+    loop = asyncio.get_running_loop()
+    try:
+        logits, kv_caches, start_pos = await loop.run_in_executor(None, _prefill, messages)
+    except Exception as exc:
+        traceback.print_exc()
+        err = json.dumps({"error": str(exc)})
+        yield f"data: {err}\n\n".encode()
+        return
+
     generated: list[int] = []
 
     for _ in range(req.max_tokens):
-        next_token, logits, kv_caches, start_pos = _step(logits, kv_caches, start_pos, req, generated)
+        try:
+            next_token, logits, kv_caches, start_pos = _step(
+                logits, kv_caches, start_pos, req, generated
+            )
+        except Exception as exc:
+            traceback.print_exc()
+            err = json.dumps({"error": str(exc)})
+            yield f"data: {err}\n\n".encode()
+            return
+
         generated.append(next_token)
         if next_token in _stop_ids:
             break

@@ -70,7 +70,7 @@ def main() -> None:
                         help="Serve the pre-built frontend from FastAPI instead of Vite dev server")
     args = parser.parse_args()
 
-    frontend_dir  = ROOT / "tui" / "frontend"
+    frontend_dir  = Path(__file__).parent / "frontend"
     frontend_dist = frontend_dir / "dist"
     vite_proc: subprocess.Popen | None = None
 

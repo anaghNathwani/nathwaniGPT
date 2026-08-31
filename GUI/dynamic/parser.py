@@ -44,10 +44,15 @@ class ActionStreamParser:
                         events.append(("text", pre))
                     self._buf = ""
                     self._in_tag = True
-                elif len(self._buf) > len(OPEN):
-                    # First char cannot be the start of OPEN — safe to emit.
-                    events.append(("text", self._buf[0]))
-                    self._buf = self._buf[1:]
+                # Don't emit char-by-char — bulk-flush after the loop.
+
+        # Emit everything that can't possibly be the start of OPEN.
+        # Keep only OPEN.length-1 chars as lookahead.
+        if not self._in_tag and len(self._buf) > len(OPEN) - 1:
+            safe = len(self._buf) - (len(OPEN) - 1)
+            events.append(("text", self._buf[:safe]))
+            self._buf = self._buf[safe:]
+
         return events
 
     def flush(self) -> list[tuple[str, object]]:
